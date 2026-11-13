@@ -5168,16 +5168,43 @@ async function punchRecord(type) {
 
 
 // ===== [직원] 개인 바로가기 (?emp=사원ID): 홈 화면 이름 설정 + 사원 자동 선택 =====
-function copyPunchShortcut() {
-    const sel = document.getElementById('punchEmpSelect');
-    if (!sel.value) { setPunchMsg('먼저 사원을 선택해 주세요.', true); return; }
-    const base = window.location.href.split('?')[0];
-    const url = base + '?emp=' + encodeURIComponent(sel.value);
+// 직원 앱 주소 (직원용 employee_app.html 을 올린 HTTPS 주소). 비워두면 이 관리자 파일 주소를 사용
+const EMPLOYEE_APP_URL = '';
+
+function generateEmpToken() {
+    const a = new Uint8Array(16);
+    crypto.getRandomValues(a);
+    return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function copyLinkText(url) {
     const done = () => setPunchMsg('✅ 링크가 복사되었습니다. 직원에게 보내주세요.');
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url).then(done, () => prompt('아래 링크를 복사하세요', url));
     } else {
         prompt('아래 링크를 복사하세요', url);
+    }
+}
+
+// 사원별 무작위 토큰을 만들어 저장하고, 그 토큰이 담긴 직원 앱 링크를 복사
+async function copyPunchShortcut() {
+    const sel = document.getElementById('punchEmpSelect');
+    if (!sel.value) { setPunchMsg('먼저 사원을 선택해 주세요.', true); return; }
+    if (!firestoreEnabled || !firestoreDb) { setPunchMsg('클라우드 저장소가 연결되지 않아 링크를 만들 수 없습니다.', true); return; }
+
+    try {
+        const ref = firestoreDb.collection(FIRESTORE_COLLECTION).doc('attendanceStore');
+        const snap = await ref.get();
+        const tokens = (snap.exists && snap.data().empTokens) || {};
+        let token = tokens[sel.value];
+        if (!token) {
+            token = generateEmpToken();
+            await ref.set({ empTokens: { [sel.value]: token } }, { merge: true });
+        }
+        const base = EMPLOYEE_APP_URL || window.location.href.split('?')[0];
+        copyLinkText(base + '?t=' + token);
+    } catch (e) {
+        setPunchMsg('링크 생성 실패: ' + e.message, true);
     }
 }
 
